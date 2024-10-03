@@ -39,3 +39,10 @@ $ cd $REGISTRY/app
 $ su -c "./Console/clearcache" ${APACHE_USER}
 $ su -c "./Console/cake database" ${APACHE_USER}
 ```
+
+
+
+Other notes:
+https://spaces.at.internet2.edu/display/COmanage/COmanage+Developer+Manual
+https://spaces.at.internet2.edu/display/COmanage/Writing+Registry+Plugins`
+https://github.internet2.edu/docker/comanage-registry-docker/blob/main/docs/simple-development-plugin-mariadb.md
