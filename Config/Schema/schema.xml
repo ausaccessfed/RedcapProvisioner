@@ -35,7 +35,15 @@
     <field name="server_id" type="I">
       <constraint>REFERENCES cm_servers(id)</constraint>
     </field>
+    <field name="co_id" type="I">
+      <constraint>REFERENCES cm_cos(id)</constraint>
+    </field>
+    <field name="co_group_id" type="I">
+      <constraint>REFERENCES cm_co_groups(id)</constraint>
+    </field>
+    <field name="identifier_type" type="C" size="32" />
 
+    <field name="redcap_username_prefix" type="C" size="6" />
     <field name="created" type="T" />
     <field name="modified" type="T" />
 
@@ -44,6 +52,81 @@
       <unique />
     </index>
 
-
   </table>
+  <!--     <field name="project_id_prefix" type="C" size="6" />
+           <field name="project_name_delimiter" type="C" size="3" />
+  -->
+
+  <table name="co_redcap_projects">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_provisioning_target_id" type="I">
+      <constraint>REFERENCES co_redcap_provisioner_targets(id)</constraint>
+    </field>
+    <field name="co_id" type="I">
+      <constraint>REFERENCES cm_cos(id)</constraint>
+    </field>
+    
+    <field name="project_pid" type="I" />
+
+    <field name="project_deleted" type="T" />
+
+    <field name="project_api_token" type="C" size="32" />
+
+    <field name="co_services_id" type="I">
+      <constraint>REFERENCES cm_co_services(id)</constraint>
+    </field>
+
+    <field name="co_cous_id" type="I">
+      <constraint>REFERENCES cm_cous(id)</constraint>
+    </field>
+    
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+
+    <index name="co_redcap_projects_i1">
+      <col>co_redcap_provisioner_targets</col>
+      <unique />
+    </index>
+  </table>
+
+  <table name="co_redcap_users">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_provisioning_target_id" type="I">
+      <constraint>REFERENCES co_redcap_provisioner_targets(id)</constraint>
+    </field>
+    <field name="co_id" type="I">
+      <constraint>REFERENCES cm_cos(id)</constraint>
+    </field>
+    
+    <field name="co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(co_person_id)</constraint>
+    </field>
+
+    <field name="nif_id" type="C" size="16" />
+
+    <field name="project_deleted" type="T" />
+
+    <field name="co_services_id" type="I">
+      <constraint>REFERENCES cm_co_services(id)</constraint>
+    </field>
+
+    <field name="co_cous_id" type="I">
+      <constraint>REFERENCES cm_cous(id)</constraint>
+    </field>
+    
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+
+    <index name="co_redcap_users_i1">
+      <col>co_redcap_provisioner_targets</col>
+      <unique />
+    </index>
+  </table>
+
 </schema>
