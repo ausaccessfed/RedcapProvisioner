@@ -406,7 +406,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
 
     if ($coPersonRoleLabel != $projectRoleName) {
       $updateRedcap = true;
-      $this->log("FUNCTION syncPerson - updateRedcapA: " . print_r($updateRedcap, true));
+      $this->log("FUNCTION assignUserToRole - updateRedcapA: " . print_r($updateRedcap, true));
       $removeRoleIndex = array_search('Custom Role', array_column(array_column($definedRoles, 'roleRights'), 'role_label'));
       $subsetDefinedRoles = $definedRoles;
       unset($subsetDefinedRoles[$removeRoleIndex]);
@@ -418,17 +418,17 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       if ( $coPersonRoleLabel == "Custom Role" ) { 
         if ( !($excludeRole) ) {
           $updateRedcap = false;
-          $this->log("FUNCTION syncPerson - updateRedcapB: " . print_r($updateRedcap, true));
+          $this->log("FUNCTION assignUserToRole - updateRedcapB: " . print_r($updateRedcap, true));
         }
       }
     } 
 
-    $this->log("FUNCTION syncPerson - updateRedcapC: " . print_r($updateRedcap, true));
+    $this->log("FUNCTION assignUserToRole - updateRedcapC: " . print_r($updateRedcap, true));
     return $updateRedcap;
 
     $response = array();
     if ($updateRedcap == true) {
-      $this->log("FUNCTION syncPerson - UPDATE USER");
+      $this->log("FUNCTION assignUserToRole - UPDATE USER");
       $response = $this -> updateUser($projectApiToken, $userRedcapRoleDetails);  // this
       return response;
     }
@@ -541,7 +541,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   }
 
   /**
-  * Create REDCap Project
+  * Remove user from REDCap Projects
   * @since   COmanage Registry v4.4.0
   * @param   Array $coProvisioningTargetData  CO Provisioner Target data
   * @param   Array $provisioningData CO Service Provisioning data
@@ -552,8 +552,8 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   /* */
   protected function cleanupUserRoles($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION cleanupUserRoles");
-    //$this->log("FUNCTION cleanupUserRoles: coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
-    //$this->log("FUNCTION cleanupUserRoles: provisioningData: " . print_r($provisioningData, true));
+    $this->log("FUNCTION cleanupUserRoles: coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
+    //$this->log("FUNCTION cleanupUserRoles: provisioningData: " . print_r($provisioningData['CoPersonRole'], true));
     // triggers differently between CoPerson inactive and Roles inactive
     
     // process userRoles to remove user from REDCap and/or every project
@@ -567,15 +567,16 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
 
     $this->log("FUNCTION cleanupUserRoles: userRoles: " . print_r($userRoles, true));
 
-    $this->log("FUNCTION syncPerson-STATUS: " . print_r($provisioningData['CoPerson']['status'], true));
+    $this->log("FUNCTION cleanupUserRoles-STATUS: " . print_r($provisioningData['CoPerson']['status'], true));
     foreach ($provisioningData['CoPersonRole'] as $role) {
-      $this->log("FUNCTION syncPerson-ROLE: " . print_r($role['cou_id'], true));
-      $this->log("FUNCTION syncPerson-ROLE: " . print_r($role['affiliation'], true));
-      $this->log("FUNCTION syncPerson-ROLE: " . print_r($role['status'], true));
-      $this->log("FUNCTION syncPerson-ROLE: " . print_r($role['Cou']['name'], true));
+      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['cou_id'], true));
+      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['affiliation'], true));
+      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['status'], true));
+      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['Cou']['name'], true));
       $this->log(" ");
 
-
+      $this->log("Column: " , print_r(array_column($userRoles, ""), true));
+      //$found = array_search($role['cou_id'],array_column($userRoles, ""))
 
 
     }
@@ -817,7 +818,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
         'token'       => $projectInfo['CoRedcapProjects']['project_api_token'],
         'content'     => 'user',
         'action'      => 'delete',
-        'users'        => $data,
+        'users'       => $data,
       );
       $this->log("fields: " . print_r($fields, true));
       $response = $this -> readWriteApi($fields);
@@ -839,8 +840,8 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   /* */
   protected function saveProjectApiToken($coProvisioningTargetData, $provisioningData, $redcapProjectDetails) {
     $this->log("FUNCTION saveProjectApiToken");
-    //$this->log("UNCTION saveProjectApiToken-coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
-    //$this->log("UNCTION saveProjectApiToken-provisioningData: " . print_r($provisioningData, true));
+    //$this->log("FUNCTION saveProjectApiToken-coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
+    //$this->log("FUNCTION saveProjectApiToken-provisioningData: " . print_r($provisioningData, true));
 
     $args = array();
     $args['CoRedcapProjects']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
@@ -871,26 +872,37 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   */
   /* */
   protected function saveUserDetails($detailsForSaving) {
-    $this->log("FUNCTION saveUserDetails - detailsForSaving" . print_r($detailsForSaving, true));
+    $this->log("FUNCTION saveUserDetails - details: " . print_r($detailsForSaving, true));
 
     $args = array();
-    $args['CoRedcapUsers']['co_provisioning_target_id'] = $detailsForSaving['co_provisioning_target_id'];
-    $args['CoRedcapUsers']['co_id'] = $detailsForSaving['co_id'];
-    $args['CoRedcapUsers']['co_person_id'] = $detailsForSaving['co_person_id'];
-    $args['CoRedcapUsers']['nif_id'] = $detailsForSaving['nif_id'];
-    $args['CoRedcapUsers']['co_services_id'] = $detailsForSaving['co_services_id'];
-    $args['CoRedcapUsers']['co_cous_id'] = $detailsForSaving['co_cous_id'];
+    $args['conditions']['CoRedcapUsers.co_provisioning_target_id'] = $detailsForSaving['co_provisioning_target_id'];
+    $args['conditions']['CoRedcapUsers.co_id'] = $detailsForSaving['co_id'];
+    $args['conditions']['CoRedcapUsers.co_person_id'] = $detailsForSaving['co_person_id'];
+    $args['conditions']['CoRedcapUsers.nif_id'] = $detailsForSaving['nif_id'];
+    $args['conditions']['CoRedcapUsers.co_services_id'] = $detailsForSaving['co_services_id'];
+    $args['conditions']['CoRedcapUsers.co_cous_id'] = $detailsForSaving['co_cous_id'];
+    
+    $this->log("FUNCTION saveUserDetails - args: " . print_r($args, true));
 
     $userRoles = $this -> CoRedcapUsers->find('first', $args);
 
-    $this->log("userRoles: " . print_r($userRoles, true));
+    $this->log("FUNCTION saveUserDetails - FOUND userRoles: " . print_r($userRoles, true));
 
-    if (!empty($userRoles['CoRedcapUsers']['id'])) {
-      $args['CoRedcapUsers']['id'] = $userRoles['CoRedcapUsers']['id'];
-      $this->log("args: " . print_r($args, true));
+    if (empty($userRoles)) {
+      $args = array();
+      $args['CoRedcapUsers']['co_provisioning_target_id'] = $detailsForSaving['co_provisioning_target_id'];
+      $args['CoRedcapUsers']['co_id'] = $detailsForSaving['co_id'];
+      $args['CoRedcapUsers']['co_person_id'] = $detailsForSaving['co_person_id'];
+      $args['CoRedcapUsers']['nif_id'] = $detailsForSaving['nif_id'];
+      $args['CoRedcapUsers']['co_services_id'] = $detailsForSaving['co_services_id'];
+      $args['CoRedcapUsers']['co_cous_id'] = $detailsForSaving['co_cous_id'];
       $this -> CoRedcapUsers->clear();
       $this -> CoRedcapUsers->save($args);
+
+      $this->log("CoRedcapUsers->id: " . print_r($this -> CoRedcapUsers->id, true));
+      //$this -> CoRedcapUsers->id
     }
+  
   }
 
   /*
@@ -980,11 +992,11 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
 
               $detailsForSaving = array(
                 'co_provisioning_target_id' => $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'],
-                'co_id' => $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'],
-                'co_person_id' => $provisioningData['CoPerson']['id'],
-                'nif_id' => $username,
-                'co_services_id' => $projectInfo['CoRedcapProjects']['co_services_id'],
-                'co_cous_id' => $role['cou_id']
+                'co_id'                     => $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'],
+                'co_person_id'              => $provisioningData['CoPerson']['id'],
+                'nif_id'                    => $username,
+                'co_services_id'            => $projectInfo['CoRedcapProjects']['co_services_id'],
+                'co_cous_id'                => $role['cou_id']
               );
               $this->log("FUNCTION syncPerson - comparison: " . print_r($currentRedcapUserRole . " + " . $coPersonRoleLabel . " + " . $projectRoleName, true));
               
@@ -993,9 +1005,9 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
               if ($updateRedcap == true) {
                 $this->log("FUNCTION syncPerson - UPDATE USER");
                 $response = $this -> updateUser($projectInfo['CoRedcapProjects']['project_api_token'], $userRedcapRoleDetails);
-                $this->log("syncPerson response: " . print_r($response, true));
+                //$this->log("syncPerson response: " . print_r($response, true));
                 if ($response -> code >= 200 || $response -> code < 300) {
-                  $this->log("detailsForSaving" . print_r($detailsForSaving, true));
+                  //$this->log("FUNCTION syncPerson - detailsForSaving" . print_r($detailsForSaving, true));
                   $this -> saveUserDetails($detailsForSaving);
                 }
               }
