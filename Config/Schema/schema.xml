@@ -110,7 +110,7 @@
 
     <field name="nif_id" type="C" size="16" />
 
-    <field name="project_deleted" type="T" />
+    <field name="project_deleted" type="T" />   
 
     <field name="co_services_id" type="I">
       <constraint>REFERENCES cm_co_services(id)</constraint>
@@ -130,3 +130,6 @@
   </table>
 
 </schema>
+
+<!-- might not need project_deleted field
+-->

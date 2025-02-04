@@ -52,14 +52,13 @@ $cm_redcap_provisioner_texts['en_US'] = array(
   'pl.redcapprovisioner.identifier_type.desc'        => 'The CO Person Identifier of this type will be used for the REDCap username. Chose carefully as REDCap usernames cannot be changed or updated after provisioning to REDCap!',
   'pl.redcapprovisioner.server'                      => 'Target REDCap Server',
   'pl.redcapprovisioner.server.desc'                 => 'Select a target REDCap Server.',
-  'pl.redcapprovisioner.redcap_username_prefix'        => 'REDCap username prefix',
-  'pl.redcapprovisioner.redcap_username_prefix.desc'   => 'This prefix is appended to the CILogon identifier used for REDCap usernames. <br>Max 6 characters, can be empty.',
-  'pl.redcapprovisioner.usage'                       => 'REDCap Provisioner Plugin requirements: v0.0.3 - features',
+  'pl.redcapprovisioner.redcap_username_prefix'      => 'REDCap username prefix',
+  'pl.redcapprovisioner.redcap_username_prefix.desc' => 'This prefix is appended to the CILogon identifier used for REDCap usernames. <br>Max 6 characters, can be empty.',
+  'pl.redcapprovisioner.usage'                       => 'REDCap Provisioner Plugin requirements: v0.0.5 - features',
   'pl.redcapprovisioner.usage.desc'                  => 'Service Config conditions necessary for REDCap project creation: <br>
                                                       [Service][status] == Active <br>
                                                       [Service][cou_id] NOT empty <br>
-                                                      [Service][co_group_id] matches the Provisioning Target [co_group_id] <br>
-                                                      [Service][short_label] NOT empty'
+                                                      [Service][co_group_id] matches the Provisioning Target [co_group_id]'
 
     //'pl.redcapprovisioner.mode'                        => 'Protocol Mode',  
 );

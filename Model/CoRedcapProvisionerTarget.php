@@ -25,9 +25,6 @@
  * @license       Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
  */
 
- //cm_co_redcap_projects 
- //cm_co_red_cap_projects
-
 App::uses("CoProvisionerPluginTarget", "Model");
 App::uses("CoService", "Model");
 
@@ -107,7 +104,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     )
   );
 
-  // apiadminrole within only minimal sufficient rights to manage users and roles
+  // apiadminrole within only minimal sufficient Admin rights to manage users and roles
   static $apiadminrole = array(   // SHOULD always be the apiadminrole
     'extendedType'   => '',       // should NEVER need an extendedType since this role should NEVER be allocated to an individual!!
     'roleRights' => array(
@@ -119,12 +116,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     )
   );
 
-  // User roles that are deployed but not managed 
-  //static $roleLabelsToNotManage = array(
-  //  'role' => "Custom Role",
-  //);
-
-  // Pre-defined REDCap Roles with 'role_labels' and 'roleRights' mapped to predefined 'extendedTypes';
+  // Several pre-defined REDCap Roles with 'role_labels' and 'roleRights' mapped to predefined 'extendedTypes';
   static $standardRolesForRedcap = array(
     0 => array(
       'extendedType'   => 'redcap-admin',
@@ -183,38 +175,16 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   } 
 
   /*
-  protected function test($op, $coProvisioningTargetData) {
-    $this -> createHttpClient($coProvisioningTargetData);
-    $username = 'DEVNIF1000071';
-    $projectApiToken = '';
-    $extendedType = 'redcap-admin';
-    $collectRoles = CoRedcapProvisionerTarget::$standardRolesForRedcap;
-    $this->log("collectRoles: " . print_r($collectRoles, true));
-
-    foreach ($collectRoles as $role) {
-      if ($role['extendedType'] == $extendedType) {
-        $roleLabel = $role['roleRights']['role_label'];
-        break;
-      }
-    }
-    //$roleLabel = array_search($extendedType, $collectRoles);
-    $this->log("roleLabel: " . print_r($roleLabel, true));
-
-    
-  }
-  */
-
-  /**
-   * Provision for the specified CO Person.
+   * Provision for the specified CO Person or CO Service.
    *  
    * @since  COmanage Registry v4.3.4
-   * @param  Array                  $coProvisioningTargetData CO Provisioning Target data
    * @param  ProvisioningActionEnum $op                       Registry trans action type triggering provisioning
-   * @param  Array                  $provisioningData         Provisioning data
+   * @param  Array                  $coProvisioningTargetData CO Provisioning Target data
+   * @param  Array                  $provisioningData         Provisioning data, populated with ['CoPerson'] or ['CoService']
    * @return Boolean True on success
    * 
   */
-
+  
   public function provision($coProvisioningTargetData, $op, $provisioningData) {
     $this->log("FUNCTION provision - OP = " . print_r($op, true));
     //$this->log("FUNCTION provision: coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
@@ -230,10 +200,10 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       case ProvisioningActionEnum::CoGroupAdded:
       case ProvisioningActionEnum::CoGroupUpdated:
       case ProvisioningActionEnum::CoGroupReprovisionRequested:
-        $syncGroup = true;
+        //$syncGroup = true;
         break;
       case ProvisioningActionEnum::CoGroupDeleted:
-        $deleteGroup = true;
+        //$deleteGroup = true;
         break;
       case ProvisioningActionEnum::CoPersonAdded:
       case ProvisioningActionEnum::CoPersonEnteredGracePeriod:
@@ -255,50 +225,57 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       case ProvisioningActionEnum::CoServiceUpdated:
       case ProvisioningActionEnum::CoServiceAdded:
       case ProvisioningActionEnum::CoServiceReprovisionRequested:
-      //case ProvisioningActionEnum::CoServiceDeleted:            //delete entry from cm_co_redcap_projects ??
+      //case ProvisioningActionEnum::CoServiceDeleted:            //NOT deleting Projects REDCap
         $syncService = true;
         break;
       default:
-        // Ignore all other actions. Note group membership changes
+        // Ignore all other actions. Note: group membership changes
         // are typically handled as CoPersonUpdated events.
-        return true;
+        return false;
         break;
     }
 
     // determine which actions require updates to REDCap
     if ($syncService || $syncPerson) {  
-      $this -> createHttpClient($coProvisioningTargetData); // check server Active
+      $valid = $this -> createHttpClient($coProvisioningTargetData);
+      if (!$valid) {
+        return false;
+      }
     }
 
      if ($deletePerson) {
-      // not allowing account deleteion in REDCap??
-      // remove from projects and REDCap?
+      // not allowing account deleteion in REDCap, but removing users from projects and REDCap
+      $provData = array();
+      $this -> cleanupUserRoles($coProvisioningTargetData, $provData, $provisioningData['CoPerson']['id']); 
+      return false;
      }
     
     if($syncService) {
       $this -> syncProject($coProvisioningTargetData, $provisioningData);
     }
     
-    if ( $syncPerson ) {
-      $this -> syncPerson($coProvisioningTargetData, $provisioningData);
-      // clean up user roles in projects
-      //$this -> cleanupUserRoles($coProvisioningTargetData, $provisioningData);
-
+    if ($syncPerson) {
+      $provData = array();  // Remove user from roles in REDCap projects
+      if ($provisioningData['CoPerson']['status'] == StatusEnum::Active) {
+        $this -> syncPerson($coProvisioningTargetData, $provisioningData);
+        $provData = $provisioningData['CoPersonRole']; 
+      }
+      $this -> cleanupUserRoles($coProvisioningTargetData, $provData, $provisioningData['CoPerson']['id']); 
     }
     return true;
   }
   
-  /**
-  * Add defined default roles to a REDCap project
+  /*
+  * Add defined DEFAULT roles to a REDCap project
+  *
   * @since   COmanage Registry v4.4.0
-  * @param   string   $newProjectApiToken  Project API Token
-  * @return  null
-  * @throws  RuntimeException
+  * @param   string            $projectApiToken           Project API Token
+  * @throws  RuntimeException  $response -> reasonPhrase  HTTP reasonPhrase
   *
   */
-  /* */
-  protected function addDefaultProjectRoles($newProjectApiToken) {    
-    $this->log("FUNCTION addDefaultProjectRoles");
+
+  protected function addDefaultProjectRoles($projectApiToken) {    
+    //$this->log("FUNCTION addDefaultProjectRoles");
 
     $standardRoles = CoRedcapProvisionerTarget::$standardRolesForRedcap;
     $standardRoles[] = CoRedcapProvisionerTarget::$apiadminrole;
@@ -307,56 +284,54 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     //$this->log("data: " . print_r($data, true));
     
     $fields = array(
-      'token'   => $newProjectApiToken,
+      'token'   => $projectApiToken,
       'content' => 'userRole',
       'data'    => $data,
     );
     $response = $this -> readWriteApi($fields);
     if ($response -> code < 200 || $response -> code > 299) {
       throw new RuntimeException($response -> reasonPhrase);
-      return;
     }
   }
 
-  /**
-  * Assign the REDPCap API user (as the owner and creator) to APIADMIN project role
+  /*
+  * Assign the REDPCap API user (as the owner and creator) to APIADMIN project role.
+  *
   * @since   COmanage Registry v4.4.0
-  * @param   String   $apiUserComanage            username
-  * @param   String   $projectApiToken            Project API Token
-  * @return  None
-  * @throws  //InvalidArgumentException if project not found
+  * @param   String   $username         Username of user to assign to REDCap project roles
+  * @param   String   $projectApiToken  Project API Token
+  * @throws  RuntimeException           if project not found
   *
   */
-  /* */
-  protected function assignApiAdmin($userName, $newProjectApiToken) {
+
+  protected function assignApiAdmin($userName, $projectApiToken) {
     $this -> log("FUNCTION assignApiUser");
 
     $roleLabel = CoRedcapProvisionerTarget::$apiadminrole['roleRights']['role_label'];
     //$this -> log("roleLabel: " . print_r($roleLabel, true));
 
-    $redcapRoles = json_decode($this -> exportProjectRoles($newProjectApiToken), true);
-    //retreive REDCap unique_role_labels everytime we add a user to a role to make sure that the name matches what's CILogon
-    //may need to store the unique_role_labels
+    $redcapRoles = json_decode($this -> exportProjectRoles($projectApiToken), true);
+    //retreive REDCap unique_role_labels everytime we add a user to a role to ensure 
+    //that the name matches what CILogon may need to write the unique_role_labels.
 
     $redcapRoleLabel = array_column($redcapRoles, 'role_label');
     $uniqueRoleKey = array_search($roleLabel, $redcapRoleLabel);
+
     //$this -> log("uniqueRoleKey -------------->: " . print_r($uniqueRoleKey, true));
-
-    $this->log("FUNCTION assignApiUser ITEM: " . print_r($redcapRoles[$uniqueRoleKey]['role_label'], true));
-    $this->log("FUNCTION assignApiUser ITEM: " . print_r($redcapRoles[$uniqueRoleKey]['unique_role_name'], true));
-
-    $redcapUniqueRoleName = $redcapRoles[$uniqueRoleKey]['unique_role_name'];
+    //$this->log("FUNCTION assignApiUser role_label: " . print_r($redcapRoles[$uniqueRoleKey]['role_label'], true));
+    //$this->log("FUNCTION assignApiUser unique_role_name: " . print_r($redcapRoles[$uniqueRoleKey]['unique_role_name'], true));
 
     $roleAssignment = array(
       'username'         => $userName,
-      'unique_role_name' => $redcapUniqueRoleName,
+      'unique_role_name' => $redcapRoles[$uniqueRoleKey]['unique_role_name'],
     );
 
-    $data = "[" . json_encode($roleAssignment) . "]";     // REDcap only wants an array type object with one element!
+    $data = "[" . json_encode($roleAssignment) . "]";
+    // REDcap only accepts a json string enclosed in square brackets '[' and ']'.
     //$this->log("data: " . print_r($data, true));
 
     $fields = array(
-      'token'       => $newProjectApiToken,
+      'token'       => $projectApiToken,
       'content'     => 'userRoleMapping',
       'action'      => 'import',
       'data'        => $data,
@@ -365,85 +340,62 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
 
     if ($response -> code < 200 || $response -> code > 299) {
       throw new RuntimeException($response -> reasonPhrase);
-      return;
     }
   }
 
-  /**
-  * Manage a user's REDCap Project role, but only if the role is a managed known role
+  /*
+  * Assign/determine what a user's REDCap Project role should be, but only if the role is a managed and known role.
+  * If is a CM user has a Custom Role, then the Project admin may assign them to a project manager created role (within REDCap),
+  * but not the default defined roles in CM.
+  *
   * @since  COmanage Registry v4.4.0
-  * @param  string   $userRedcapRoleDetails   User Role mapping
-  * @param  string   $projectApiToken         Project's API Token
-  * @return boolean  $updateRedcap            True: update user
-  * @throws RuntimeException ??
+  * @param  string  $userRedcapRoleDetails   User Role mapping
+  * @return boolean $updateRedcap            True|False
   *
   */
-  /* */
-  protected function assignUserToRole($userRedcapRoleDetails) {
-    $this->log("FUNCTION assignUserToRole");
-    /*
-    $userRedcapRoleDetails = array(
-                'username'               => $username,
-                'coPersonRoleLabel'      => $coPersonRoleLabel,
-                'coPersonRoleUniqueName' => $coPersonUniqueRoleName,
-                'currentRoleName'        => $projectRoleName,
-                'currentUniqueRoleName'  => $currentRedcapUserRole
-              );
 
-    */
-    $username = $userRedcapRoleDetails['username'];
+  protected function assignUserToRoleCalc($userRedcapRoleDetails) {
+    $this->log("FUNCTION assignUserToRole");
+
     $coPersonRoleLabel = $userRedcapRoleDetails['coPersonRoleLabel'];
-    $coPersonUniqueRoleName= $userRedcapRoleDetails['coPersonRoleUniqueName'];
     $projectRoleName= $userRedcapRoleDetails['currentRoleName'];
-    $currentRedcapUserRole= $userRedcapRoleDetails['currentUniqueRoleName'];
 
     $definedRoles = array();
     $definedRoles = CoRedcapProvisionerTarget::$standardRolesForRedcap;
     $definedRoles['apiadminrole'] = CoRedcapProvisionerTarget::$apiadminrole;
-    $extendedType = array_column(CoRedcapProvisionerTarget::$standardRolesForRedcap, 'extendedType');
 
     $updateRedcap = false;
 
     if ($coPersonRoleLabel != $projectRoleName) {
       $updateRedcap = true;
-      $this->log("FUNCTION assignUserToRole - updateRedcapA: " . print_r($updateRedcap, true));
+      //$this->log("FUNCTION assignUserToRole - updateRedcapA: " . print_r($updateRedcap, true));
       $removeRoleIndex = array_search('Custom Role', array_column(array_column($definedRoles, 'roleRights'), 'role_label'));
       $subsetDefinedRoles = $definedRoles;
       unset($subsetDefinedRoles[$removeRoleIndex]);
       $managedRoles = array_column(array_column($subsetDefinedRoles, 'roleRights'), 'role_label');
-      $managedRoles[] = null;  //addition of an empty role is necessary
+      $managedRoles[] = null;  //addition of an empty role is necessary to manage users not in a REDCap project role.
 
       $excludeRole = in_array($projectRoleName, $managedRoles, true);
-      $this->log("excludeRole: " . print_r($excludeRole, true));
+      //$this->log("excludeRole: " . print_r($excludeRole, true));
       if ( $coPersonRoleLabel == "Custom Role" ) { 
         if ( !($excludeRole) ) {
           $updateRedcap = false;
-          $this->log("FUNCTION assignUserToRole - updateRedcapB: " . print_r($updateRedcap, true));
+          //$this->log("FUNCTION assignUserToRole - updateRedcapB: " . print_r($updateRedcap, true));
         }
       }
-    } 
-
-    $this->log("FUNCTION assignUserToRole - updateRedcapC: " . print_r($updateRedcap, true));
-    return $updateRedcap;
-
-    $response = array();
-    if ($updateRedcap == true) {
-      $this->log("FUNCTION assignUserToRole - UPDATE USER");
-      $response = $this -> updateUser($projectApiToken, $userRedcapRoleDetails);  // this
-      return response;
     }
-    return;
+    //$this->log("FUNCTION assignUserToRole - updateRedcapC: " . print_r($updateRedcap, true));
+    return $updateRedcap;
   }
 
-  /**
-  * Setup HTTP conection to REDCap
+  /*
+  * Setup HTTP conection to REDCap.
+  *
   * @since   COmanage Registry v4.4.0
   * @param   Array  $coProvisioningTargetData   CO Provisioner Target data
-  * @return  Void
   * @throws  InvalidArgumentException
   *
   */
-  /* */
 
   protected function createHttpClient($coProvisioningTargetData) {
     $this->log("FUNCTION createHttpClient");
@@ -458,7 +410,8 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     if (empty($srvr)) {
       throw new InvalidArgumentException(_txt('er.redcapprovisioner.notfound'));
       //throw new InvalidArgumentException(_txt('er.redcapprovisioner.notfound', array(_txt('ct.http_servers.1'), $coProvisioningTargetData['CoRedcapProvisionerTarget']['server_id'])));
-      //investigate
+      //investigate alternate
+      return false;
     }
 
     $this -> Http = new CoHttpClient();
@@ -471,18 +424,20 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
         'Accept'        => "application/json"
       )
     ));
+    return true;
   }
 
-  /**
-  * Create REDCap Project
+  /*
+  * Create project in REDCap
+  *
   * @since   COmanage Registry v4.4.0
   * @param   Array $coProvisioningTargetData  CO Provisioner Target data
-  * @param   Array $provisioningData CO Service Provisioning data
-  * @return  
-  * @throws  // InvalidArgumentException   ??
+  * @param   Array $provisioningData          CO Service Provisioning data
+  * @throws  RuntimeException
   *
+  * // TODO review $data light of other examples in this code
   */
-  /* */
+
   protected function createProject($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION createProject");
     //$this->log("createProject-coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
@@ -491,7 +446,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     // check COservice object & Provisioning Target are linked by the same group id otherwise skip
     if ($coProvisioningTargetData['CoRedcapProvisionerTarget']['co_group_id'] == $provisioningData['CoService']['co_group_id'] ) {
       $serverDetails = $this -> getRedcapServerDetails($coProvisioningTargetData);
-      $this->log("FUNCTION createProject-serverDetails: " . print_r($serverDetails, true));
+      //$this->log("FUNCTION createProject-serverDetails: " . print_r($serverDetails, true));
     }
 
     if (!empty($serverDetails)) {
@@ -500,8 +455,8 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       $projectDescription = $provisioningData['CoService']['description'];
       $userName = $serverDetails['HttpServer']['username'];
     } else {
-        throw new RuntimeException(_txt('er.redcapprovisioner.notfound'));
-        return;
+      throw new RuntimeException(_txt('er.redcapprovisioner.notfound'));
+      return;
     }
 
     $record = array(
@@ -509,9 +464,9 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
           'purpose'       => '0',
           'project_notes' => $projectDescription,
     );
-    // a fudge to create an acceptable json encoded string that the REDCap API is willing to accept
+    // REDCAp's 'Create Project' API requires a json string encapsulated in square brackets'[' ']'. 
+    // This is the only string that the REDCap API is willing to accept.
     $data = "[" . json_encode($record, true) . "]" ;
-    // review in light of other examples in this code
     // $this->log("data: " . print_r($data, true));
 
     $fields = array(
@@ -523,11 +478,11 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $newProjectApiToken = $response['body'];
     //$this->log("FUNCTION createProject-newProjectApiToken: " . print_r($newProjectApiToken, true));
 
-    $projectDetails = $this -> getRedcapProjectDetails($newProjectApiToken);
+    $projectDetails = $this -> getRedcapProjectDetails($newProjectApiToken); // Get project details for the PID.
     //$this->log("FUNCTION createProject-projectDetails: " . print_r($projectDetails, true));
 
     $redcapProjectDetails = array();
-    $redcapProjectDetails['project_id'] = $projectDetails['project_id'];
+    $redcapProjectDetails['project_pid'] = $projectDetails['project_id'];
     $redcapProjectDetails['project_api'] = $newProjectApiToken;
     //$this->log("FUNCTION createProject-redcapProjectDetails: " . print_r($redcapProjectDetails, true));
     
@@ -536,73 +491,95 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     if (!empty($coRedcapProjectId)) {
       $this -> addDefaultProjectRoles($newProjectApiToken);
       $this -> assignApiAdmin($userName, $newProjectApiToken);
-      return $coRedcapProjectId;
     }
   }
 
-  /**
+  /*
   * Remove user from REDCap Projects
-  * @since   COmanage Registry v4.4.0
-  * @param   Array $coProvisioningTargetData  CO Provisioner Target data
-  * @param   Array $provisioningData CO Service Provisioning data
-  * @return  
-  * @throws  // InvalidArgumentException   ??
+  *
+  * @since  COmanage Registry v4.4.0
+  * @param  Array  $coProvisioningTargetData  CO Provisioner Target data
+  * @param  Array  $provisioningData          CO Person[Role] data 
+  * @param  String $coPersonId                CO Person id
+  * @throw  TODO // InvalidArgumentException  ??
   *
   */
-  /* */
-  protected function cleanupUserRoles($coProvisioningTargetData, $provisioningData) {
+
+  protected function cleanupUserRoles($coProvisioningTargetData, $coPersonRole, $coPersonId) {
     $this->log("FUNCTION cleanupUserRoles");
-    $this->log("FUNCTION cleanupUserRoles: coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
+    //$this->log("FUNCTION cleanupUserRoles: coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
     //$this->log("FUNCTION cleanupUserRoles: provisioningData: " . print_r($provisioningData['CoPersonRole'], true));
-    // triggers differently between CoPerson inactive and Roles inactive
     
-    // process userRoles to remove user from REDCap and/or every project
-
-
+    $coPersonCouList = array();
+    if (!(empty($coPersonRole))) {
+      $coPersonCouList = array_column($coPersonRole, "cou_id");
+    }
+    //$this->log("FUNCTION cleanupUserRoles: coPersonCouList: " . print_r($coPersonCouList, true));
+    
     $args = array();
-    $args['CoRedcapUsers']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['id'];
-    $args['CoRedcapUsers']['co_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'];
-    $args['CoRedcapUsers']['co_person_id'] = $provisioningData['CoPerson']['id'];
-    $userRoles = $this -> CoRedcapUsers->find('all', $args);
+    $args['conditions']['co_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'];
+    $args['conditions']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
+    $args['conditions']['co_person_id'] = $coPersonId;
+    $storedUserRoles = $this -> CoRedcapUsers->find('all', $args);
 
-    $this->log("FUNCTION cleanupUserRoles: userRoles: " . print_r($userRoles, true));
+    //$this->log("FUNCTION cleanupUserRoles: storedUserRoles: " . print_r($storedUserRoles, true));
+    
+    $storeCoRedcapUsers = array_column($storedUserRoles, "CoRedcapUsers");
+    $storeUserCous = array_column($storeCoRedcapUsers, "co_cous_id");
 
-    $this->log("FUNCTION cleanupUserRoles-STATUS: " . print_r($provisioningData['CoPerson']['status'], true));
-    foreach ($provisioningData['CoPersonRole'] as $role) {
-      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['cou_id'], true));
-      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['affiliation'], true));
-      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['status'], true));
-      $this->log("FUNCTION cleanupUserRoles-ROLE: " . print_r($role['Cou']['name'], true));
-      $this->log(" ");
+    //$this->log("FUNCTION cleanupUserRoles: storeUserCous: " . print_r($storeUserCous, true));
 
-      $this->log("Column: " , print_r(array_column($userRoles, ""), true));
-      //$found = array_search($role['cou_id'],array_column($userRoles, ""))
+    $diffList = array_diff($storeUserCous, $coPersonCouList);
+    //$this->log("FUNCTION cleanupUserRoles: diffList: " . print_r($diffList, true));
+    
+    if (!empty($diffList)){
+      foreach ($diffList as $removeRole) {
+        $key = array_search($removeRole, $storeUserCous);
+        //$this->log("FUNCTION cleanupUserRoles: key: " . print_r($key, true));
 
+        $item = $storeCoRedcapUsers[$key];
+        //$this->log("FUNCTION cleanupUserRoles: item: " . print_r($item, true));
 
+        $args = array();
+        $args['conditions']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
+        $args['conditions']['co_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'];
+        $args['conditions']['co_cous_id'] = $item['co_cous_id'];
+        $args['conditions'][] = 'CoRedcapProjects.project_deleted IS NULL';
+        $args['conditions'][] = 'CoRedcapProjects.project_api_token IS NOT NULL';
+        $storedProject = $this -> CoRedcapProjects->find('first', $args);
+
+        //$this->log("FUNCTION cleanupUserRoles: storedProject: " . print_r($storedProject, true));
+        //$this->log("FUNCTION cleanupUserRoles: storedUserRoles: " . print_r($storedUserRoles[$key], true));
+
+        $response = $this -> removeUserFromProject($storedProject['CoRedcapProjects']['project_api_token'], $storedUserRoles[$key]['CoRedcapUsers']['nif_id']);
+
+        $args = array();
+        $args['id'] = $storedUserRoles[$key]['CoRedcapUsers']['id'];
+        $args['co_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'];
+        $args['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
+        $args['co_person_id'] = $coPersonId;
+
+        $this -> CoRedcapUsers->delete($args);
+          
+        if (!($response -> code >= 200 || $response -> code < 299)) {
+          // throw error and ask the user to check/confirm REDCap to clean up the user manually.
+          $this->log("FUNCTION cleanupUserRoles: storedUserRoles: " . print_r($response, true));
+          // Removing the user/role from the CM tracking database needs to happen regardless of the error from REDCap!
+          // TODO
+        }
+      }
     }
-    $this->log("=========================>ROLEs");
-
-
-
-
-
-
-    if($provisioningData['CoPerson']['status'] != StatusEnum::Active) {
-    }
-
-
-
   }  
 
-  /**
-  * Get project roles from REDCap for a project 
+  /*
+  * Get Project Roles from REDCap for a project
+  *
   * @since   COmanage Registry v4.4.0
-  * @param   String $projectApiToken  Project API Token
-  * @return  Array $userRoles         Array of All a Project's Roles
-  * @throws  //InvalidArgumentException if project not found
+  * @param   String  $projectApiToken  Project API Token
+  * @return  Array   $userRoles        All of a Project's Roles
   *
   */
-  /* */
+
   protected function exportProjectRoles($projectApiToken) {
     $this->log("FUNCTION exportProjectRoles");
     
@@ -616,14 +593,14 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
 
   /*
   * Get a REDCap user's roles (only for a single project)
+  *
   * @since   COmanage Registry v4.4.0
-  * @param   String   $username         REDCap user
-  * @param   String   $projectApiToken  Project API Token
-  * @throws  
-  * @returns Array    $mapof|null       User's project roles or null
+  * @param   String   $username                     REDCap user
+  * @param   String   $projectApiToken              Project API Token
+  * @returns Array    $currentRedcapUserRole|null   User's project role or null
   *
   */
-  /* */
+
   protected function exportRedcapUserRoles($username, $projectApiToken) {
     $this->log("FUNCTION exportRedcapUserRoles: " . print_r($username . " - " . $projectApiToken, true));
 
@@ -636,23 +613,30 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     //$this->log("FUNCTION exportRedcapUserRoles-response: " . print_r($response, true));
 
     if (!empty($response)) {
-      foreach ($response as $map) {
-        if ($map['username'] == strtolower($username)) {
-          //$this->log("FUNCTION exportRedcapUserRoles-username+role: " . print_r($map, true));
-          return $map['unique_role_name'];
+      foreach ($response as $currentRedcapUserRole) {
+        if ($currentRedcapUserRole['username'] == strtolower($username)) {
+          //$this->log("FUNCTION exportRedcapUserRoles-username+role: " . print_r($currentRedcapUserRole, true));
+          return $currentRedcapUserRole['unique_role_name'];
+          // Since a user can have ONLY one REDCap role, return the 'unique_role_name' for the first match of username.
         }
       }
+    } else {
+      //the $response from REDCap shouild never be empty because an admin_api user should always be assigned to the Admin Role, however....
+      return;
     }
   }
 
-  /**
+  /*
   * Get project's details from REDCap
   * @since  COmanage Registry v4.4.0
   * @param  Array  $coProvisioningTargetData  CO Provisioner Target data
   * @param  String $projectApiToken           Project's API Token
   * @return Array  $projectDetails            REDCap Project Details
   */
+
   protected function getRedcapProjectDetails($projectApiToken) {
+    // If a REDCap project has been deleted (ie: in the bin but not completely deleted), REDCap will still respond with a code 200 and details of the project.
+    // No clear way to determine if project is available until the project is updated, at which point REDCap returns an error.
     $this->log("FUNCTION getRedcapProjectDetails");
     //$this->log("FUNCTION getRedcapProjectDetails - projectApiToken: " . print_r($projectApiToken, true));
     
@@ -664,21 +648,22 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $response = $this -> readWriteApi($fields);
     $projectDetails = json_decode($response, true);
 
-    //$this->log("FUNCTION getRedcapProjectDetails - response: " . print_r($response, true));
-    //$this->log("FUNCTION getRedcapProjectDetails - projectDetails: " . print_r($projectDetails, true));
+    $this->log("FUNCTION getRedcapProjectDetails - response: " . print_r($response, true));
+    $this->log("FUNCTION getRedcapProjectDetails - projectDetails: " . print_r($projectDetails, true));
     return $projectDetails;
   }
 
-  /**
-  * Get REDCap server details, url and superToken
+  /*
+  * Get REDCap server details, url and superToken from CM
+  @
   * @since   COmanage Registry v4.4.0
-  * @param   Array $coProvisioningTargetData  CO Provisioner Target data
-  * @param   Array $provisioningData CO Service Provisioning data
-  * @return  Array $srvr server details
-  * @throws  // InvalidArgumentException   ??
+  * @param   Array  $coProvisioningTargetData  CO Provisioner Target data
+  * @param   Array  $provisioningData          CO Service Provisioning data
+  * @return  Array  $srvr                      server details
+  * @throws  InvalidArgumentException          if no server details in CM
   *
   */
-  /* */
+  
   protected function getRedcapServerDetails($coProvisioningTargetData) {
     $this->log("FUNCTION getRedcapServerDetails");
     //$this->log("FUNCTION getRedcapServerDetails - coProvisioningTargetData" . print_r($coProvisioningTargetData, true));
@@ -688,7 +673,6 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $args['contain'] = array('HttpServer');
     $CoProvisioningTarget = new CoProvisioningTarget();
     $srvr = $CoProvisioningTarget->Co->Server->find('first', $args);
-    //$this->log("FUNCTION getRedcapServerDetails - srvr: " . print_r($srvr['Server'], true));
     
     if (empty($srvr)) {
       throw new InvalidArgumentException(_txt('er.redcapprovisioner.notfound', array(_txt('ct.http_servers.1'), $coProvisioningTargetData['CoRedcapProvisionerTarget']['server_id'])));
@@ -696,7 +680,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     return $srvr;
   }
 
-  /**
+  /*
   * Get stored Project details from co_redcap_projects table
   * @since   COmanage Registry v4.4.0
   * @param   Array $coProvisioningTargetData  CO Provisioner Target data
@@ -705,7 +689,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   * @throws  // InvalidArgumentException   ??
   *
   */
-  /* */
+  /*  TODO is this still in use??????*/
   protected function getStoredProjects($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION getStoredProjects");
 
@@ -723,13 +707,16 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     return $storedCouIds;
   }
 
-  /**
-  * Mark a REDCap project as unmanageable in COmanage
+  /*
+  * Mark a REDCap project as unmanageable in COmanage table cm_co_redcap_projects
+  *
   * @since   COmanage Registry v4.4.0
   * @param   String $projectApiToken  REDCap Project API Token
   * @return  Void|string              VOID if no project; CoRedcapProjects->id if Project marked deleted is successful
   * @throws  RuntimeException
+  *
   */
+
   protected function markProjectDeleted($projectApiToken) {
     $this->log("FUNCTION markProjectDeleted");
 
@@ -738,6 +725,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $storedProject = $this -> CoRedcapProjects->find('first', $args);
     
     if(empty($storedProject)) {
+      //nothting to do.
       return;
     }
     $tableId = $storedProject['CoRedcapProjects']['id'];
@@ -749,20 +737,24 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $this -> CoRedcapProjects->save($args);
 
     //$this->log("this: " . print_r($this -> CoRedcapProjects -> id, true));
-    if (!empty($this -> CoRedcapProjects->id)) { //if no id, details not saved
+    if (!empty($this -> CoRedcapProjects->id)) { 
       return $this -> CoRedcapProjects->id;
     } else {
+      // If no id, record not saved.
       throw new RuntimeException(_txt('er.redcapprovisioner.token.none'));
     }
   }
 
-  /**
+  /*
   * Read/Write to REDCap API as a standard function
+  *
   * @since  COmanage Registry v4.4.0
-  * @param  String  $fields   REDCap API payload
+  * @param  String  $fields   REDCap API token
   * @return Array   $response Array containing the HTTP response
   * @throws RuntimeException
+  *
   */
+
   protected function readWriteApi($fields) {
     //$this->log("FUNCTION readWriteApi");
 
@@ -774,70 +766,54 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $message = http_build_query($fields, "", '&');
     $response = $this -> Http->post("/api/" , $message);
     
-    $this->log("FUNCTION readWriteApi - response code: " . print_r($response -> code, true)); 
+    //$this->log("FUNCTION readWriteApi - response code: " . print_r($response -> code, true)); 
     //$this->log("FUNCTION: readWriteApi - response body: " . print_r($response -> body, true)); 
 
     if ($response -> code < 200 || $response -> code > 299) {
-      if ((str_contains($response -> body, "because it was deleted")) || 
-          (str_contains($response -> body, "You do not have permissions to use the API")) ) {
-        $this -> markProjectDeleted($fields['token']);
-      }
       throw new RuntimeException($response -> reasonPhrase);
     }
     return $response;
   }
 
-  /**
+  /*
   * Remove user from REDCap Project
+  *
   * @since   COmanage Registry v4.4.0
-  * @param   Array $coProvisioningTargetData  CO Provisioner Target data
-  * @param   Array $provisioningData CO Service Provisioning data
-  * @param   Array $deleteList List of COU ids
-  * @return  
-  * @throws  // InvalidArgumentException   ??
+  * @param   String $apiToken  Project API Token
+  * @param   String $username  User to remove from project
+  * @return  String $response  HTTP reponse
   *
   */
-  /* */
-  protected function removeUserFromProject($coProvisioningTargetData, $provisioningData, $deleteList, $username) {
+
+  protected function removeUserFromProject($apiToken, $username) {
     $this->log("FUNCTION removeUserFromProject");
 
-    foreach ($deleteList as $couId) {
-      $args = array();
-      $args['conditions']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
-      $args['conditions']['co_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'];
-      $args['conditions'][] = 'CoRedcapProjects.project_deleted IS NULL';
-      $args['conditions'][] = 'CoRedcapProjects.project_api_token IS NOT NULL';
-      $args['conditions']['co_cous_id'] = $couId;
-      $projectInfo = $this -> CoRedcapProjects->find('first', $args);
-      $this->log("projectInfo from CM: " . print_r($projectInfo, true));
+    $data = array();
+    $data[] = strtolower($username);
 
-      $data = array();
-      $data[] = strtolower($username);
-
-      $fields = array(
-        'token'       => $projectInfo['CoRedcapProjects']['project_api_token'],
-        'content'     => 'user',
-        'action'      => 'delete',
-        'users'       => $data,
-      );
-      $this->log("fields: " . print_r($fields, true));
-      $response = $this -> readWriteApi($fields);
-    }
-
-
+    $fields = array(
+      'token'       => $apiToken,
+      'content'     => 'user',
+      'action'      => 'delete',
+      'users'       => $data,
+    );
+    $this->log("fields: " . print_r($fields, true));
+    $response = $this -> readWriteApi($fields);
+    return $response;
   }
 
-  /**
-  * Save REDCap Project API Token to co_redcap_projects table
+  /*
+  * Save REDCap Project API Token and other details to the co_redcap_projects table
+  *
   * @since   COmanage Registry v4.4.0
-  * @param   Array $coProvisioningTargetData  CO Provisioner Target data
-  * @param   Array $provisioningData CO Service Provisioning data
-  * @param   String $newProjectApiToken Project API Token
-  * @return  
-  * @throws  // InvalidArgumentException   ??
+  * @param   Array        $coProvisioningTargetData  CO Provisioner Target data
+  * @param   Array        $provisioningData          CO Service Provisioning data
+  * @param   String       $newProjectApiToken        Project API Token
+  * @return  string|null  CoRedcapProjects->id       Project Table id if record created
+  * @throws  RuntimeException       
   *
   */
-  /* */
+
   protected function saveProjectApiToken($coProvisioningTargetData, $provisioningData, $redcapProjectDetails) {
     $this->log("FUNCTION saveProjectApiToken");
     //$this->log("FUNCTION saveProjectApiToken-coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
@@ -847,10 +823,10 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $args['CoRedcapProjects']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
     $args['CoRedcapProjects']['co_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_id'];
     $args['CoRedcapProjects']['project_api_token'] = $redcapProjectDetails['project_api'];
-    $args['CoRedcapProjects']['project_pid'] = $redcapProjectDetails['project_id'];
+    $args['CoRedcapProjects']['project_pid'] = $redcapProjectDetails['project_pid'];
     $args['CoRedcapProjects']['co_services_id'] = $provisioningData['CoService']['id'];
     $args['CoRedcapProjects']['co_cous_id'] = $provisioningData['CoService']['cou_id'];
-    //$this->log("saving ARGS: " . print_r($args, true));
+
     $this -> CoRedcapProjects->clear();
     $this -> CoRedcapProjects->save($args);
 
@@ -859,18 +835,18 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       return $this -> CoRedcapProjects->id;
     } else {
       throw new RuntimeException(_txt('er.redcapprovisioner.token.none'));
+      return;
     }
   }
 
   /*
-  * Save CoPerson Role mappings
+  * Save CoPerson Role mappings to cm_co_redcap_users table.
+  *
   * @since  COmanage Registry v4.4.0
   * @param  Array $detailsForSaving   User details and roles
-  * @return // Void
-  * @throws   
   *
   */
-  /* */
+
   protected function saveUserDetails($detailsForSaving) {
     $this->log("FUNCTION saveUserDetails - details: " . print_r($detailsForSaving, true));
 
@@ -882,11 +858,11 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $args['conditions']['CoRedcapUsers.co_services_id'] = $detailsForSaving['co_services_id'];
     $args['conditions']['CoRedcapUsers.co_cous_id'] = $detailsForSaving['co_cous_id'];
     
-    $this->log("FUNCTION saveUserDetails - args: " . print_r($args, true));
+    ///$this->log("FUNCTION saveUserDetails - args: " . print_r($args, true));
 
     $userRoles = $this -> CoRedcapUsers->find('first', $args);
 
-    $this->log("FUNCTION saveUserDetails - FOUND userRoles: " . print_r($userRoles, true));
+    //$this->log("FUNCTION saveUserDetails - FOUND userRoles: " . print_r($userRoles, true));
 
     if (empty($userRoles)) {
       $args = array();
@@ -899,22 +875,21 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       $this -> CoRedcapUsers->clear();
       $this -> CoRedcapUsers->save($args);
 
-      $this->log("CoRedcapUsers->id: " . print_r($this -> CoRedcapUsers->id, true));
+      //$this->log("CoRedcapUsers->id: " . print_r($this -> CoRedcapUsers->id, true));
       //$this -> CoRedcapUsers->id
     }
-  
   }
 
   /*
-  * Sync Person to REDCap
+  * Sync CO Person to REDCap
   * @since  COmanage Registry v4.4.0
-  * @param  Array $coProvisioningTargetData   CO Provisioner Target data
-  * @param  Array $provisioningData           CO Service Provisioning data
-  * @return // Void
-  * @throws   
+  * @param  Array $coProvisioningTargetData  CO Provisioner Target data
+  * @param  Array $provisioningData          CO Person Provisioning data
+  * @throw RuntimeException                  for missing Co Person ID
+  * @throw RuntimeException                  projectInfo from CoRedcapProjects table marked deleted
   *
   */
-  /* */
+
   protected function syncPerson($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION syncPerson");
     //$this->log("FUNCTION syncPerson-coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
@@ -924,10 +899,11 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $identifierType = $coProvisioningTargetData['CoRedcapProvisionerTarget']['identifier_type'];
     $ids = Hash::extract($provisioningData['Identifier'], '{n}[type='.$identifierType.']');
     if (empty($ids)) {
-      throw new RuntimeException(_txt('er.apiprovisioner.id.none', array($identifierType)));
+      throw new RuntimeException(_txt('er.redcapprovisioner.id.none', array($identifierType)));
     }
+
     $username = $ids[0]['identifier'];
-    $this->log("NIF identifier: " . print_r($username, true));
+    //$this->log("NIF identifier: " . print_r($username, true));
 
     $definedRoles = array();
     $definedRoles = CoRedcapProvisionerTarget::$standardRolesForRedcap;
@@ -938,13 +914,14 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     // include check for role status active
     if (!empty($provisioningData['CoPersonRole'])) {
       foreach ($provisioningData['CoPersonRole'] as $role) {
+        // loop through CO Person roles and match defined REDCap roles
         if (in_array($role['affiliation'], $extendedType)) {
           
           $index = array_search($role['affiliation'], array_column($definedRoles, 'extendedType'), true);
 
           //$this->log("index: " . print_r($index, true));
           $coPersonRoleLabel = $definedRoles[$index]['roleRights']['role_label'];
-          $this->log("FUNCTION syncPerson - Selected ROLE: " . print_r($role['cou_id'] . " + ". $role['Cou']['name'] . " + ". $role['affiliation'] . " + ". $coPersonRoleLabel, true));
+          //$this->log("FUNCTION syncPerson - Selected ROLE: " . print_r($role['cou_id'] . " + ". $role['Cou']['name'] . " + ". $role['affiliation'] . " + ". $coPersonRoleLabel, true));
 
           $trackCou[] = $role['cou_id'];
 
@@ -955,22 +932,22 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
           //$args['conditions'][] = 'CoRedcapProjects.project_api_token IS NOT NULL';
           $args['conditions']['co_cous_id'] = $role['cou_id'];
           $projectInfo = $this -> CoRedcapProjects->find('first', $args);
-          $this->log("projectInfo from CM: " . print_r($projectInfo, true));
+          //$this->log("projectInfo from CM: " . print_r($projectInfo, true));
                     
           if (!empty($projectInfo)) {
-            if (empty($projectInfo['project_deleted'])) {
+            if (empty($projectInfo['project_deleted'])) { //project not marked unmanageable in CM
 
               $projectRedcapRoles = json_decode($this -> exportProjectRoles($projectInfo['CoRedcapProjects']['project_api_token']), true);
               //$this->log("projectRedcapRoles: " . print_r($projectRedcapRoles, true));
               
               $currentRedcapUserRole = $this -> exportRedcapUserRoles($username, $projectInfo['CoRedcapProjects']['project_api_token']);
-              $this->log("currentRedcapUserRole: " . print_r($currentRedcapUserRole, true));
+              //$this->log("currentRedcapUserRole: " . print_r($currentRedcapUserRole, true));
 
               // calculate CoPerson role details
               $role_label_list = array_column($projectRedcapRoles, 'role_label');   //aka: list of role_name
               $indexCoPerson = array_search($coPersonRoleLabel, $role_label_list);
               $coPersonUniqueRoleName = $projectRedcapRoles[$indexCoPerson]['unique_role_name'];
-              $this->log("role_label_list: " . print_r($role_label_list, true));
+              //$this->log("role_label_list: " . print_r($role_label_list, true));
               
               $projectRoleName = null;
               if (!empty($currentRedcapUserRole)) {
@@ -978,17 +955,16 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
                 $unique_role_names_list = array_column($projectRedcapRoles, 'unique_role_name');  //unique_role_names_list
                 $indexRedcapUser = array_search($currentRedcapUserRole, $unique_role_names_list);  //index for unique_role_names_list
                 $projectRoleName = $projectRedcapRoles[$indexRedcapUser]['role_label'];
-                $this->log("unique_role_names_list: " . print_r($unique_role_names_list, true));
+                //$this->log("unique_role_names_list: " . print_r($unique_role_names_list, true));
               }
 
               $userRedcapRoleDetails = array(
                 'username'               => $username,
                 'coPersonRoleLabel'      => $coPersonRoleLabel,
                 'coPersonRoleUniqueName' => $coPersonUniqueRoleName,
-                'currentRoleName'        => $projectRoleName,
-                'currentUniqueRoleName'  => $currentRedcapUserRole
+                'currentRoleName'        => $projectRoleName
               );
-              $this->log("FUNCTION syncPerson - userRedcapRoleDetails: " . print_r($userRedcapRoleDetails, true));
+              //$this->log("FUNCTION syncPerson - userRedcapRoleDetails: " . print_r($userRedcapRoleDetails, true));
 
               $detailsForSaving = array(
                 'co_provisioning_target_id' => $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'],
@@ -1000,7 +976,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
               );
               $this->log("FUNCTION syncPerson - comparison: " . print_r($currentRedcapUserRole . " + " . $coPersonRoleLabel . " + " . $projectRoleName, true));
               
-              $updateRedcap = $this -> assignUserToRole($userRedcapRoleDetails);
+              $updateRedcap = $this -> assignUserToRoleCalc($userRedcapRoleDetails);
 
               if ($updateRedcap == true) {
                 $this->log("FUNCTION syncPerson - UPDATE USER");
@@ -1009,12 +985,13 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
                 if ($response -> code >= 200 || $response -> code < 300) {
                   //$this->log("FUNCTION syncPerson - detailsForSaving" . print_r($detailsForSaving, true));
                   $this -> saveUserDetails($detailsForSaving);
+                  throw new RuntimeException($response -> reasonPhrase);
                 }
               }
             } else {
               $this->log("projectInfo from CoRedcapProjects marked delted!");
-              throw new RuntimeException(_txt('projectInfo from CoRedcapProjects marked delted!'));
-              // project api token not found or marked deleted
+              // projectInfo from CoRedcapProjects table marked deleted
+              throw new RuntimeException(_txt('er.redcapprovisioner.deleted'));
             }
           }
         }
@@ -1022,14 +999,15 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     }
   }
 
-  /**
+  /*
   * Sync Project info from COmanage to REDCap
   * @since   COmanage Registry v4.4.0
   * @param   Array $coProvisioningTargetData  CO Provisioner Target data
   * @param   Array $provisioningData          CO Service Provisioning data
   * @return  Void
-  * @throws  InvalidArgumentException
-  */
+  * @throws  InvalidArgumentException         Missing or mismatched CoService Grp with Proivsioning Target Group
+  *
+  **/
 
   protected function syncProject($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION syncProject");
@@ -1050,6 +1028,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       return;
     }
 
+    //Find existing stored details
     $args = array();
     $args['conditions']['co_provisioning_target_id'] = $coProvisioningTargetData['CoRedcapProvisionerTarget']['co_provisioning_target_id'];
     $args['conditions']['co_services_id'] = $provisioningData['CoService']['id'];
@@ -1058,73 +1037,84 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
     $this->log("FUNCTION syncProject-Details on stored project: " . print_r($storedProject, true));
 
     if ( !empty($storedProject) && !empty($storedProject['CoRedcapProjects']['project_api_token']) ) {
+      //Cannot update a project without a project api token, create a new REDCap Project instead.
       if ($storedProject['CoRedcapProjects']['project_deleted']) {
         throw new InvalidArgumentException(_txt('er.redcapprovisioner.deleted'));
         return;
       }
-      // update project if changed, but first check REDCap to see that the project still exists in REDCap
-      // should check what to do if project details exist, but no project api token
-
+      // update REDCap project if changed in CM
       $projectApiToken = $storedProject['CoRedcapProjects']['project_api_token'];
-      //$projectPid = $storedProject['CoRedcapProjects']['project_pid'];
-      $this->log("Project was provisioned for COService with id: " . print_r($storedProject['CoRedcapProjects']['co_services_id'], true));
-
+      //$this->log("Project was provisioned for COService with id: " . print_r($storedProject['CoRedcapProjects']['co_services_id'], true));
       $this -> updateProject($coProvisioningTargetData, $provisioningData , $projectApiToken);
     } else {
-      $coRedcapProjectId = $this -> createProject($coProvisioningTargetData, $provisioningData);
-      // check if return of $coRedcapProjectId necessary update Service with URL & pid value
+      $this -> createProject($coProvisioningTargetData, $provisioningData);
     }
   }
 
-  /**
-  * Update a REDCap project's Name and description
+  /*
+  * Update a REDCap project's Name and description (only).
+  * No check of roles is performed.
+  *
   * @since  COmanage Registry v4.4.0
   * @param  Array $coProvisioningTargetData   CO Provisioner Target data
   * @param  Array $provisioningData           CO Service Provisioning data
   * @param  String $projectApiToken           Project's API Token
-  * @throws ?? 400/500 error and body of response if project has been deleted from REDCap
+  *
+  * TODO - check default roles are still present and recreate if missing.
   */
+  
   protected function updateProject($coProvisioningTargetData, $provisioningData, $projectApiToken) {
     $this->log("FUNCTION updateProject");
     //$this->log("updateProject-coProvisioningTargetData: " . print_r($coProvisioningTargetData, true));
     //$this->log("updateProject-provisioningData: " . print_r($provisioningData, true));
     
-    $response = array();
     $cmProjectName = $provisioningData['CoService']['name'];
     $cmProjectDescription = $provisioningData['CoService']['description'];
     
-    $projectInfoRedcap = $this -> getRedcapProjectDetails($projectApiToken);
-    $this->log("FUNCTION updateProject-projectInfoRedcap: " . print_r($projectInfoRedcap, true));
+    $projectInfoRedcap = $this -> getRedcapProjectDetails($projectApiToken); //Get current project details - since the project api token is available.
+    //$this->log("FUNCTION updateProject-projectInfoRedcap: " . print_r($projectInfoRedcap, true));
+    // Any failure to retrieve project details from REDCap can be ignored until there is a failure when updating REDCap.
 
-    if (!empty($projectInfoRedcap)) {
-      if ( $cmProjectName != $projectInfoRedcap['project_title'] || $cmProjectDescription != $projectInfoRedcap['project_notes'] ) {
-        $data = array(
-          'project_title' => $cmProjectName,
-          'project_notes' => $cmProjectDescription,
-        );
-        $fields = array(
-          'token' => $projectApiToken,
-          'content' => 'project_settings',
-          'data' => json_encode($data),
-        );
-        $response = $this -> readWriteApi($fields);
-        $this->log("response: " . print_r($response, true));
+    if ( $cmProjectName != $projectInfoRedcap['project_title'] || $cmProjectDescription != $projectInfoRedcap['project_notes'] ) {
+      $data = array(
+        'project_title' => $cmProjectName,
+        'project_notes' => $cmProjectDescription,
+      );
+      $fields = array(
+        'token' => $projectApiToken,
+        'content' => 'project_settings',
+        'data' => json_encode($data),
+      );
+      $response = $this -> readWriteApi($fields);
+      //$this->log("response: " . print_r($response, true));
+      if ((str_contains($response -> body, "because it was deleted")) ||   //project deledted but still avialble in REDCap.
+        (str_contains($response -> body, "You do not have permissions to use the API")) ) {  //project deledted and NOT avialble in REDCap.
+          $this -> markProjectDeleted($projectApiToken);
       }
     }
   }
 
-  /* */
+  /*
+  * Update a user in a REDCap project.
+  *
+  * @since  COmanage Registry v4.4.0
+  * @param  string $projectApiToken        Project API token
+  * @param  Array  $userRedcapRoleDetails  Username and role details
+  * @return array  $response               HTTP response
+  *
+  */
+
   protected function updateUser($projectApiToken, $userRedcapRoleDetails) {
     $this->log("FUNCTION updateUser");
-    $this->log("updateUser-project_api_token: " . print_r($projectApiToken, true));
-    $this->log("updateUser-userRedcapRoleDetails: " . print_r($userRedcapRoleDetails, true));
+    //$this->log("updateUser-project_api_token: " . print_r($projectApiToken, true));
+    //$this->log("updateUser-userRedcapRoleDetails: " . print_r($userRedcapRoleDetails, true));
     
     $roleAssignment = array(
       'username'         => $userRedcapRoleDetails['username'],
       'unique_role_name' => $userRedcapRoleDetails['coPersonRoleUniqueName'],
     );
     $data = "[" . json_encode($roleAssignment) . "]";     // REDcap only wants an array type object with one element!
-    $this->log("data======================>: " . print_r($data, true));
+    //$this->log("data: " . print_r($data, true));
 
     $fields = array(
       'token'       => $projectApiToken,
@@ -1133,11 +1123,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
       'data'        => $data,
     );
     $response = $this -> readWriteApi($fields);
-    if ($response -> code < 200 || $response -> code > 299) {
-      throw new RuntimeException($response -> reasonPhrase);
-    }
     return $response;
   }
-
 
 }
