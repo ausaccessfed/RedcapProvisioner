@@ -692,8 +692,10 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   * @throws  // InvalidArgumentException   ??
   *
   */
-  /*  TODO is this still in use??????*/
+  /*  
+      TODO is this still in use??????
       Issue URL: https://github.com/ausaccessfed/RedcapProvisioner/issues/20
+*/
   protected function getStoredProjects($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION getStoredProjects");
 
