@@ -436,6 +436,8 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   * @throws  RuntimeException
   *
   * // TODO review $data light of other examples in this code
+    // Issue URL: https://github.com/ausaccessfed/RedcapProvisioner/issues/23
+    Issue URL: https://github.com/ausaccessfed/RedcapProvisioner/issues/22
   */
 
   protected function createProject($coProvisioningTargetData, $provisioningData) {
@@ -502,6 +504,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   * @param  Array  $provisioningData          CO Person[Role] data 
   * @param  String $coPersonId                CO Person id
   * @throw  TODO // InvalidArgumentException  ??
+    Issue URL: https://github.com/ausaccessfed/RedcapProvisioner/issues/21
   *
   */
 
@@ -690,6 +693,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   *
   */
   /*  TODO is this still in use??????*/
+      Issue URL: https://github.com/ausaccessfed/RedcapProvisioner/issues/20
   protected function getStoredProjects($coProvisioningTargetData, $provisioningData) {
     $this->log("FUNCTION getStoredProjects");
 
@@ -1061,6 +1065,7 @@ class CoRedcapProvisionerTarget extends CoProvisionerPluginTarget {
   * @param  String $projectApiToken           Project's API Token
   *
   * TODO - check default roles are still present and recreate if missing.
+    Issue URL: https://github.com/ausaccessfed/RedcapProvisioner/issues/19
   */
   
   protected function updateProject($coProvisioningTargetData, $provisioningData, $projectApiToken) {
